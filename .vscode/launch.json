@@ -6,7 +6,7 @@
     "configurations": [
 
         {
-            "name": "Debug ai-news/main.py",
+            "name": "Debug poc.py",
             "type": "debugpy",
             "request": "launch",
             "program": "${workspaceFolder}/ai-news/poc.py",

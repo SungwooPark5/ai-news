@@ -1,5 +1,6 @@
 import os
 import json
+import feedparser
 from datetime import datetime
 from dotenv import load_dotenv
 from tavily import TavilyClient
@@ -10,48 +11,104 @@ from langchain_core.output_parsers import JsonOutputParser
 # .env 파일 로드
 load_dotenv()
 
+KOREAN_NEWS_DOMAINS = [
+    "yna.co.kr",        # 연합뉴스
+    "hani.co.kr",       # 한겨레
+    "chosun.com",       # 조선일보
+    "joongang.co.kr",   # 중앙일보
+    "donga.com",        # 동아일보
+    "khan.co.kr",       # 경향신문
+    "kmib.co.kr",       # 국민일보
+    "news.kbs.co.kr",   # KBS 뉴스
+    "imnews.imbc.com",  # MBC 뉴스
+    "news.sbs.co.kr",   # SBS 뉴스
+    "ytn.co.kr",        # YTN
+    "newsis.com",       # 뉴시스
+    "news1.kr",         # 뉴스1
+]
+
+def get_today_trend_topics():
+    print("\n📡 [Google News] 대한민국 실시간 주요 뉴스를 스캔하고 있습니다...")
+    
+    # 구글 뉴스 RSS URL (대한민국/한국어 설정)
+    # ceid=KR:ko -> 한국 지역, 한국어
+    rss_url = "https://news.google.com/rss?hl=ko&gl=KR&ceid=KR:ko"
+    
+    try:
+        feed = feedparser.parse(rss_url)
+        entries = feed.entries[:20] # 상위 20개만 가져옴
+    except Exception as e:
+        print(f"RSS 파싱 실패: {e}")
+        return []
+
+    if not entries:
+        print("뉴스를 찾을 수 없습니다.")
+        return []
+    
+    # 제목 리스트 추출
+    headlines = [f"- {entry.title}" for entry in entries]
+    headlines_text = "\n".join(headlines)
+    
+    print(f"✅ {len(headlines)}개의 헤드라인 확보 완료!")
+
+    print("🧠 AI 편집장이 카드뉴스 주제를 선별하고 있습니다...")
+
+    llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
+    parser = JsonOutputParser()
+
+    prompt = ChatPromptTemplate.from_template("""
+    아래는 방금 수집된 '구글 뉴스(대한민국)'의 헤드라인 리스트야.
+    이 중에서 카드뉴스로 제작하기 가장 좋은 **'정치/사회적 논쟁 이슈'** 10가지를 뽑아줘.
+
+    [헤드라인 리스트]
+    {headlines}
+
+    [요구사항]
+    1. '단순 사건사고(화재, 날씨)'나 '스포츠/연예'는 제외할 것.
+    2. '정책 찬반', '국회 갈등', '사회적 법안' 등 논쟁거리가 있는 주제 우선.
+    3. 구체적인 키워드 문장으로 출력.
+    
+    [출력 포맷 - JSON 리스트]
+    ["의대 정원 증원 갈등", "국민연금 개혁안 논란", "전세사기 특별법 개정"]
+    """)
+
+    chain = prompt | llm | parser
+    
+    try:
+        topics = chain.invoke({"headlines": headlines_text})
+        return topics
+    except Exception as e:
+        print(f"토픽 추출 실패: {e}")
+        return []
+
 def run_news_processor(topic):
     # ---------------------------------------------------------
     # 1. 뉴스 검색 (Data Collection)
     # ---------------------------------------------------------
     
-    today_str = datetime.now().strftime("%Y-%m-%d")
+    today_str = datetime.now().strftime("%Y년 %m월 %d일")
     print(f"🔍 {today_str} '{topic}' 관련 최신 기사를 검색 중입니다...")
+    search_query=f"{topic}"
     
     # LangChain Tool 대신 TavilyClient를 직접 사용 (데이터 구조 안정성 위함)
     tavily = TavilyClient(api_key=os.getenv("TAVILY_API_KEY"))
     
     try:
         response = tavily.search(
-            query=topic,
+            query=search_query,
             topic="news",
-            days=1,       # 최근 1일 이내 기사만
-            max_results=5 # 상위 5개만 조회
+            days=2,       # 최근 2일 이내 기사만
+            max_results=5, # 상위 5개만 조회
         )
         results = response.get('results', [])
     except Exception as e:
         return {"error": f"검색 중 오류 발생: {e}"}
 
     if not results:
-        print("⚠️ 24시간 이내에 관련 기사가 없어 3일치로 범위를 넗힙니다...")
-        try:
-            response = tavily.search(
-                query=topic,
-                topic="news",
-                days=3,       # 최근 3일 이내 기사로 확장
-                max_results=5
-            )
-            results = response.get('results', [])
-        except Exception as e:
-            return {"error": f"기사를 찾을 수 없습니다."}
-        
-    if not results:
         return {"error": "관련 기사를 찾을 수 없습니다."}
 
     # 프로토타입용: 가장 관련성 높은 첫 번째 기사 선택
     target_news = results[0]
-    print(f"✅ 선택된 기사: {target_news['title']}")
-    print(f"🔗 링크: {target_news['url']}\n")
 
     # ---------------------------------------------------------
     # 2. AI 분석 및 데이터 구조화 (AI Processing)
@@ -81,9 +138,9 @@ def run_news_processor(topic):
     {{
         "card_title": "카드뉴스 표지 제목 (30자 이내, 클릭하고 싶게)",
         "summary_cards": [
-            "카드1: 사건의 발단이나 배경 (핵심 요약)",
-            "카드2: 주요 쟁점이나 현재 상황",
-            "카드3: 앞으로의 전망이나 영향"
+            "배경: 사건의 발단이나 배경 (핵심 요약)",
+            "쟁점: 주요 쟁점이나 현재 상황",
+            "전망: 앞으로의 전망이나 영향"
         ],
         "vote_guide": {{
             "question": "찬반 투표 질문 (예: '의대 증원에 찬성하십니까?')",
@@ -120,9 +177,31 @@ def run_news_processor(topic):
 # 실행부 (터미널에서 python main.py로 실행 시 작동)
 # ---------------------------------------------------------
 if __name__ == "__main__":
-    user_input = input("주제를 입력하세요 (예: 의대 증원): ")
-    final_data = run_news_processor(user_input)
+    
+    suggested_topics = get_today_trend_topics()
+    
+    if suggested_topics:
+        print("\n" + "="*30)
+        print("📢 AI 편집장이 추천하는 오늘의 이슈")
+        print("="*30)
+        for idx, topic in enumerate(suggested_topics):
+            print(f"{idx + 1}. {topic}")
+        print("0. 직접 입력하기")
+        print("="*30)
 
-    print("\n" + "="*20 + " [최종 JSON 데이터] " + "="*20)
-    # 한글 깨짐 방지를 위해 ensure_ascii=False 사용
+        choice = input("\n번호를 선택하세요: ")
+        
+        if choice.isdigit() and 1 <= int(choice) <= len(suggested_topics):
+            selected_topic = suggested_topics[int(choice) - 1]
+        else:
+            selected_topic = input("주제를 직접 입력하세요: ")
+    else:
+        # 추천 실패 시 바로 입력 모드
+        print("추천된 주제가 없습니다.")
+        selected_topic = input("주제를 직접 입력하세요: ")
+
+    # 2단계: 선택된 주제로 심층 분석 실행
+    final_data = run_news_processor(selected_topic)
+
+    print("\n" + "="*20 + " [최종 결과] " + "="*20)
     print(json.dumps(final_data, indent=2, ensure_ascii=False))
