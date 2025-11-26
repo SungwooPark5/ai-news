@@ -5,8 +5,7 @@ import requests
 
 from datetime import datetime
 from dotenv import load_dotenv
-from tavily import TavilyClient
-from duckduckgo_search import DDGS
+from ddgs import DDGS
 from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import JsonOutputParser
