@@ -9,7 +9,7 @@
             "name": "Debug ai-news/main.py",
             "type": "debugpy",
             "request": "launch",
-            "program": "${workspaceFolder}/ai-news/main.py",
+            "program": "${workspaceFolder}/ai-news/poc.py",
             "python": "${command:python.interpreterPath}",
             "console": "integratedTerminal"
         }
