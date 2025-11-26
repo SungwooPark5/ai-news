@@ -5,11 +5,13 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "duckduckgo-search>=8.1.1",
     "feedparser>=6.0.12",
     "langchain>=1.1.0",
     "langchain-community>=0.4.1",
     "langchain-openai>=1.1.0",
     "langchain-tavily>=0.2.13",
     "python-dotenv>=1.2.1",
+    "requests>=2.32.5",
     "tavily-python>=0.7.13",
 ]

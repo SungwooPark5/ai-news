@@ -1,9 +1,12 @@
 import os
 import json
 import feedparser
+import requests
+
 from datetime import datetime
 from dotenv import load_dotenv
 from tavily import TavilyClient
+from duckduckgo_search import DDGS
 from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import JsonOutputParser
@@ -87,33 +90,46 @@ def run_news_processor(topic):
     # ---------------------------------------------------------
     
     today_str = datetime.now().strftime("%Y년 %m월 %d일")
-    print(f"🔍 {today_str} '{topic}' 관련 최신 기사를 검색 중입니다...")
-    search_query=f"{topic}"
+    print(f"🔍 {today_str} '{topic}' 관련 최신 기사를 검색 중입니다 (DuckDuckGo)...")
     
-    # LangChain Tool 대신 TavilyClient를 직접 사용 (데이터 구조 안정성 위함)
-    tavily = TavilyClient(api_key=os.getenv("TAVILY_API_KEY"))
+    article_url = None
+    article_title = topic
     
     try:
-        response = tavily.search(
-            query=search_query,
-            topic="news",
-            days=2,       # 최근 2일 이내 기사만
-            max_results=5, # 상위 5개만 조회
-        )
-        results = response.get('results', [])
+        # region='kr-kr' : 한국 리전 강제 설정
+        ddgs = DDGS()
+        results = ddgs.text(f"{topic}", region='kr-kr', max_results=3)
+        
+        if results:
+            # 첫 번째 검색 결과의 링크를 가져옵니다.
+            best_match = results[0]
+            article_url = best_match['href']
+            article_title = best_match['title']
+            print(f"✅ 기사 발견: {article_title}")
+            print(f"🔗 링크: {article_url}")
+        else:
+            return {"error": "관련된 한국 기사를 찾을 수 없습니다."}
+            
     except Exception as e:
         return {"error": f"검색 중 오류 발생: {e}"}
 
-    if not results:
-        return {"error": "관련 기사를 찾을 수 없습니다."}
+    # 2. Jina Reader로 본문 스크랩 (가장 깔끔한 방법)
+    # URL 앞에 'https://r.jina.ai/'만 붙이면 AI용 텍스트로 변환해줍니다.
+    print("📖 기사 본문을 읽어오는 중입니다 (Jina Reader)...")
+    try:
+        jina_url = f"https://r.jina.ai/{article_url}"
+        response = requests.get(jina_url)
+        full_content = response.text
+        
+        # 내용이 너무 길면 자름 (토큰 절약)
+        if len(full_content) > 5000:
+            full_content = full_content[:5000] + "...(생략)"
+            
+    except Exception as e:
+        return {"error": f"본문 스크랩 실패: {e}"}
 
-    # 프로토타입용: 가장 관련성 높은 첫 번째 기사 선택
-    target_news = results[0]
-
-    # ---------------------------------------------------------
-    # 2. AI 분석 및 데이터 구조화 (AI Processing)
-    # ---------------------------------------------------------
-    print("🤖 AI가 카드뉴스 데이터와 퀴즈를 생성하고 있습니다...")
+    # 3. AI 분석 및 데이터 구조화
+    print("🤖 AI가 카드뉴스 데이터를 생성하고 있습니다...")
 
     # temperature=0 : 창의성보다는 정확한 포맷 준수를 위해 0으로 설정
     llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
@@ -123,11 +139,12 @@ def run_news_processor(topic):
     prompt = ChatPromptTemplate.from_template("""
     너는 정치/사회 이슈를 일반 시민들이 이해하기 쉽게 설명해주는 '친절한 에디터'야.
     아래 뉴스 기사를 읽고, 모바일 카드뉴스 앱에서 사용할 수 있는 데이터를 **반드시 JSON 형식**으로 추출해줘.
-
-    [기사 정보]
-    제목: {title}
-    내용: {content}
-    작성일: {today}
+    
+    [기사 내용]
+    {content}
+    
+    [오늘 날짜]
+    {today}
 
     [요구사항]
     1. 대상 독자: 정치/사회 이슈를 잘 모르는 초심자
@@ -143,9 +160,9 @@ def run_news_processor(topic):
             "전망: 앞으로의 전망이나 영향"
         ],
         "vote_guide": {{
-            "question": "찬반 투표 질문 (예: '의대 증원에 찬성하십니까?')",
-            "pros": "찬성 측의 핵심 논리 (한두 단어). 예: 찬성, 의료 인력 충원",
-            "cons": "반대 측의 핵심 논리 (한두 단어 ). 예: 반대, 의료 질 저하"
+            "question": "찬반 투표 질문 (예: '의대 증원에 찬성하나요?')",
+            "pros": "찬성 측의 핵심 논리 (단답형). 예: 찬성, 의료 인력 충원",
+            "cons": "반대 측의 핵심 논리 (단답형 ). 예: 반대, 의료 질 저하"
         }},
         "quiz": {{
             "question": "기사 내용을 확인하는 객관식 퀴즈 (난이도 하)",
@@ -160,13 +177,12 @@ def run_news_processor(topic):
 
     try:
         result_json = chain.invoke({
-            "title": target_news['title'],
-            "content": target_news['content'],
+            "content": full_content,
             "today": today_str
         })
         
         # 원본 링크 정보 추가 (나중에 앱에서 '원문 보기' 버튼에 씀)
-        result_json['original_url'] = target_news['url']
+        result_json['original_url'] = article_url
         
         return result_json
         
