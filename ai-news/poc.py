@@ -38,7 +38,7 @@ def get_today_trend_topics():
     
     try:
         feed = feedparser.parse(rss_url)
-        entries = feed.entries[:20] # 상위 20개만 가져옴
+        entries = feed.entries[:100] # 상위 20개만 가져옴
     except Exception as e:
         print(f"RSS 파싱 실패: {e}")
         return []
@@ -89,7 +89,7 @@ def run_news_processor(topic):
     # ---------------------------------------------------------
     
     today_str = datetime.now().strftime("%Y년 %m월 %d일")
-    print(f"🔍 {today_str} '{topic}' 관련 최신 기사를 검색 중입니다 (DuckDuckGo)...")
+    print(f"🔍 {today_str} '{topic}' 관련 최신 기사를 검색 중입니다...")
     
     article_url = None
     article_title = topic
@@ -154,9 +154,9 @@ def run_news_processor(topic):
     {{
         "card_title": "카드뉴스 표지 제목 (30자 이내, 클릭하고 싶게)",
         "summary_cards": [
-            "배경: 사건의 발단이나 배경 (핵심 요약)",
-            "쟁점: 주요 쟁점이나 현재 상황",
-            "전망: 앞으로의 전망이나 영향"
+            "요약1 (한 문장)",
+            "요약2 (한 문장)",
+            "요약3 (한 문장)",
         ],
         "vote_guide": {{
             "question": "찬반 투표 질문 (예: '의대 증원에 찬성하나요?')",
@@ -193,27 +193,34 @@ def run_news_processor(topic):
 # ---------------------------------------------------------
 if __name__ == "__main__":
     
-    suggested_topics = get_today_trend_topics()
+    # 주제를 직접 선택하거나, 추천받기
+    input_mode = input("1. 오늘의 이슈 추천받기\n2. 주제 직접 입력하기\n번호 선택: ")
     
-    if suggested_topics:
-        print("\n" + "="*30)
-        print("📢 AI 편집장이 추천하는 오늘의 이슈")
-        print("="*30)
-        for idx, topic in enumerate(suggested_topics):
-            print(f"{idx + 1}. {topic}")
-        print("0. 직접 입력하기")
-        print("="*30)
-
-        choice = input("\n번호를 선택하세요: ")
-        
-        if choice.isdigit() and 1 <= int(choice) <= len(suggested_topics):
-            selected_topic = suggested_topics[int(choice) - 1]
-        else:
-            selected_topic = input("주제를 직접 입력하세요: ")
-    else:
-        # 추천 실패 시 바로 입력 모드
-        print("추천된 주제가 없습니다.")
+    if input_mode.strip() == "2":
         selected_topic = input("주제를 직접 입력하세요: ")
+    else:
+        # 1단계: 오늘의 이슈 추천받기
+        suggested_topics = get_today_trend_topics()
+        if suggested_topics:
+            print("\n" + "="*30)
+            print("📢 AI 편집장이 추천하는 오늘의 이슈")
+            print("="*30)
+            for idx, topic in enumerate(suggested_topics):
+                print(f"{idx + 1}. {topic}")
+            print("0. 직접 입력하기")
+            print("="*30)
+
+            choice = input("\n번호를 선택하세요: ")
+            
+            if choice.isdigit() and 1 <= int(choice) <= len(suggested_topics):
+                selected_topic = suggested_topics[int(choice) - 1]
+            else:
+                selected_topic = input("주제를 직접 입력하세요: ")
+        else:
+            # 추천 실패 시 바로 입력 모드
+            print("추천된 주제가 없습니다.")
+            selected_topic = input("주제를 직접 입력하세요: ")
+    
 
     # 2단계: 선택된 주제로 심층 분석 실행
     final_data = run_news_processor(selected_topic)
