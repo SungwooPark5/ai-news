@@ -1,0 +1,13 @@
+services:
+  # AI 엔진 (FastAPI)
+  ai-server:
+    build: ./ai-server         # ai-service 폴더의 Dockerfile로 빌드해라
+    container_name: ai_server   # 컨테이너 이름
+    ports:
+      - "8000:8000"             # 로컬 8000번 -> 컨테이너 8000번 연결
+    volumes:
+      - ./ai-server:/app       # [Hot Reload] 로컬 코드를 컨테이너와 동기화
+    env_file:
+      - .env                    # .env 파일의 API 키를 주입
+    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+    restart: always

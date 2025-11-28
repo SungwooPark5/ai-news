@@ -5,7 +5,10 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "apscheduler>=3.11.1",
+    "beautifulsoup4>=4.14.2",
     "ddgs>=9.9.1",
+    "fastapi>=0.122.0",
     "feedparser>=6.0.12",
     "langchain>=1.1.0",
     "langchain-community>=0.4.1",
@@ -13,5 +16,7 @@ dependencies = [
     "langchain-tavily>=0.2.13",
     "python-dotenv>=1.2.1",
     "requests>=2.32.5",
+    "rich>=14.2.0",
     "tavily-python>=0.7.13",
+    "uvicorn>=0.38.0",
 ]
